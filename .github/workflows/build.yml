@@ -21,7 +21,7 @@ jobs:
         run: |
           # Deleting unneeded software packages
           sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt-hostedtoolcache/go
 
           # Log available space
           df -h
@@ -62,3 +62,30 @@ jobs:
         run: "./gradlew assemble${{ matrix.target }}"
       - name: "Execute Gradle lint"
         run: "./gradlew lint${{ matrix.target }}"
+      - name: "Find APK files"
+        id: find-apk
+        run: |
+          # Ищем все APK файлы в проекте
+          find . -name "*.apk" -type f | tee apk_files.txt
+          echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
+          
+          # Если это microG, ищем конкретные модули
+          echo "--- Поиск основных APK ---"
+          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -20
+      - name: "Upload APK artifacts"
+        if: steps.find-apk.outputs.apk_count > 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            **/build/outputs/apk/**/*.apk
+            **/build/outputs/bundle/**/*.aab
+          retention-days: 7
+      - name: "Upload build reports"
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            **/build/reports/**/*
+            **/build/outputs/lint-results*.xml
+          retention-days: 7
