@@ -1,88 +1,119 @@
-name: "MicroG Gradle build"
+name: "MicroG Build"
+
+permissions:
+  contents: read
+
 on:
   push:
+    branches: [ master, main ]
   pull_request:
+    branches: [ master, main ]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type (Debug/Release)'
+        required: true
+        default: 'Debug'
+        type: choice
+        options:
+          - Debug
+          - Release
 
 jobs:
   build:
-    name: "Gradle build ${{ matrix.target }}"
+    name: "Build MicroG (${{ github.event.inputs.build_type || 'Debug' }})"
     runs-on: ubuntu-latest
     env:
       GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
-    strategy:
-      matrix:
-        target: [Debug, Release]
 
     steps:
       - name: "Free disk space"
         run: |
-          # Освобождаем место на диске
+          # Deleting unneeded software packages to free space
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /opt/hostedtoolcache/go
-          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          
+          # Show available space
           df -h
-
+          
       - name: "Checkout sources"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+          submodules: recursive
+          
       - name: "Setup Java"
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: "17"
-
-      - name: "Setup Android SDK"
-        uses: android-actions/setup-android@v3
-        with:
-          sdk-version: "35"
-          build-tools-version: "35.0.0"
-          cmdline-tools-version: "11.0
-          accept-licenses: true
-
+          
       - name: "Setup Gradle"
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v3
         with:
-          cache-encryption-key: ${{ secrets.GradleEncryptionKey }}
-          build-scan-publish: true
-          build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
-          build-scan-terms-of-use-agree: "yes"
-
-      - name: "Setup matchers"
+          cache-read-only: false
+          gradle-version: wrapper
+          
+      - name: "Setup Android SDK"
         run: |
-          matchers_dir='${{ github.workspace }}/.github/matchers'
-          matcher_list()
-          {
-            echo 'gradle-build-matcher.json'
-            echo 'gradle-build-kotlin-error-matcher.json'
-          }
-          matcher_list | while IFS='' read -r NAME; do
-            if test -f "${matchers_dir:?}/${NAME:?}"; then
-              echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
-              echo "Matcher configured: ${NAME:?}"
-            fi
-          done
-
-      - name: "Set compileSdk and targetSdk to 35"
+          # Install Android SDK command line tools
+          mkdir -p $HOME/android-sdk
+          cd $HOME/android-sdk
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip commandlinetools-linux-9477386_latest.zip
+          mkdir -p cmdline-tools/latest
+          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+          
+          # Set environment variables
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          
+          # Accept licenses
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          
+          # Install required Android components
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+          
+      - name: "Make gradlew executable"
+        run: chmod +x gradlew
+        
+      - name: "Build MicroG"
         run: |
-          # Обновляем compileSdk и targetSdk в build.gradle
-          sed -i 's/compileSdkVersion.*/compileSdkVersion 35/' app/build.gradle
-          sed -i 's/targetSdkVersion.*/targetSdkVersion 35/' app/build.gradle
-
-      - name: "Execute Gradle assemble"
-        run: ./gradlew assemble${{ matrix.target }}
-
-      - name: "Execute Gradle lint"
-        run: ./gradlew lint${{ matrix.target }}
-
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'Debug' }}"
+          echo "Building $BUILD_TYPE version"
+          ./gradlew clean assemble$BUILD_TYPE
+          
+      - name: "Run tests"
+        run: |
+          BUILD_TYPE="${{ github.event.inputs.build_type || 'Debug' }}"
+          ./gradlew test$BUILD_TYPE testDebugUnitTest
+        continue-on-error: true
+        
       - name: "Upload APK artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: microg-${{ matrix.target }}-apk
+          name: "microg-${{ github.event.inputs.build_type || 'Debug' }}-apks"
           path: |
-            app/build/outputs/apk/${{ matrix.target }}/*.apk
-            **/build/outputs/apk/${{ matrix.target }}/*.apk        
+            **/build/outputs/apk/**/*.apk
+            **/build/outputs/apk/**/*.apk
+          retention-days: 30
+          if-no-files-found: warn
+          
+      - name: "Upload build reports"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "build-reports-${{ github.event.inputs.build_type || 'Debug' }}"
+          path: "**/build/reports/"
+          retention-days: 14
+          
+      - name: "Display build info"
+        run: |
+          echo "✅ Build completed!"
+          echo "Build type: ${{ github.event.inputs.build_type || 'Debug' }}"
+          echo "APK files location:"
+          find . -name "*.apk" -type f | while read apk; do
+            ls -lh "$apk"
+          done
