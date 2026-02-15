@@ -1,9 +1,8 @@
-name: "Gradle build"
-permissions: {}
+name: "MicroG Gradle build"
 on:
-  - push
-  - pull_request
-  - workflow_dispatch
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     strategy:
       matrix:
@@ -19,73 +19,70 @@ jobs:
     steps:
       - name: "Free disk space"
         run: |
-          # Deleting unneeded software packages
+          # Освобождаем место на диске
           sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /opt-hostedtoolcache/go
-
-          # Log available space
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /usr/local/lib/android
           df -h
+
       - name: "Checkout sources"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: "Setup Java"
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: "17"
+
+      - name: "Setup Android SDK"
+        uses: android-actions/setup-android@v3
+        with:
+          sdk-version: "35"
+          build-tools-version: "35.0.0"
+          cmdline-tools-version: "11.0
+          accept-licenses: true
+
       - name: "Setup Gradle"
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GradleEncryptionKey }}
           build-scan-publish: true
           build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
           build-scan-terms-of-use-agree: "yes"
+
       - name: "Setup matchers"
         run: |
-          # Setting up matchers...
-
           matchers_dir='${{ github.workspace }}/.github/matchers'
           matcher_list()
           {
             echo 'gradle-build-matcher.json'
             echo 'gradle-build-kotlin-error-matcher.json'
           }
-
           matcher_list | while IFS='' read -r NAME; do
             if test -f "${matchers_dir:?}/${NAME:?}"; then
               echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
               echo "Matcher configured: ${NAME:?}"
             fi
           done
-      - name: "Execute Gradle assemble"
-        run: "./gradlew assemble${{ matrix.target }}"
-      - name: "Execute Gradle lint"
-        run: "./gradlew lint${{ matrix.target }}"
-      - name: "Find APK files"
-        id: find-apk
+
+      - name: "Set compileSdk and targetSdk to 35"
         run: |
-          # Ищем все APK файлы в проекте
-          find . -name "*.apk" -type f | tee apk_files.txt
-          echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
-          
-          # Если это microG, ищем конкретные модули
-          echo "--- Поиск основных APK ---"
-          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -20
+          # Обновляем compileSdk и targetSdk в build.gradle
+          sed -i 's/compileSdkVersion.*/compileSdkVersion 35/' app/build.gradle
+          sed -i 's/targetSdkVersion.*/targetSdkVersion 35/' app/build.gradle
+
+      - name: "Execute Gradle assemble"
+        run: ./gradlew assemble${{ matrix.target }}
+
+      - name: "Execute Gradle lint"
+        run: ./gradlew lint${{ matrix.target }}
+
       - name: "Upload APK artifacts"
-        if: steps.find-apk.outputs.apk_count > 0
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ matrix.target }}-${{ github.sha }}
+          name: microg-${{ matrix.target }}-apk
           path: |
-            **/build/outputs/apk/**/*.apk
-            **/build/outputs/bundle/**/*.aab
-          retention-days: 7
-      - name: "Upload build reports"
-        uses: actions/upload-artifact@v4
-        with:
-          name: reports-${{ matrix.target }}-${{ github.sha }}
-          path: |
-            **/build/reports/**/*
-            **/build/outputs/lint-results*.xml
-          retention-days: 7
+            app/build/outputs/apk/${{ matrix.target }}/*.apk
+            **/build/outputs/apk/${{ matrix.target }}/*.apk        
