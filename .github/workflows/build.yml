@@ -17,69 +17,76 @@ jobs:
     steps:
       - name: "Free disk space"
         run: |
+          # Удаление ненужных пакетов
           sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /opt/hostedtoolcache/go
-          sudo apt-get clean
+          sudo rm -rf /opt-hostedtoolcache/go
+
+          # Логирование доступного места
           df -h
-          
+
       - name: "Checkout sources"
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          
+
       - name: "Setup Java"
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
-          
+
       - name: "Setup Gradle"
         uses: gradle/actions/setup-gradle@v5
-          
+        with:
+          cache-encryption-key: ${{ secrets.GradleEncryptionKey }}
+          build-scan-publish: true
+          build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
+          build-scan-terms-of-use-agree: "yes"
+
+      - name: "Setup matchers"
+        run: |
+          matchers_dir='${{ github.workspace }}/.github/matchers'
+          matcher_list()
+          {
+            echo 'gradle-build-matcher.json'
+            echo 'gradle-build-kotlin-error-matcher.json'
+          }
+
+          matcher_list | while IFS='' read -r NAME; do
+            if test -f "${matchers_dir:?}/${NAME:?}"; then
+              echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
+              echo "Matcher configured: ${NAME:?}"
+            fi
+          done
+
       - name: "Execute Gradle assemble"
         run: "./gradlew assemble${{ matrix.target }}"
-        
-      - name: "Find and prepare APK files"
-        run: |
-          mkdir -p collected-apks
-          
-          echo "=== Searching for APK files ==="
-          
-          # Ищем play-services-core APK
-          if [ -d "play-services-core/build/outputs/apk" ]; then
-            echo "Looking for play-services-core APKs..."
-            find play-services-core/build/outputs/apk -name "*.apk" -type f | while read apk; do
-              echo "Found: $apk"
-              cp "$apk" collected-apks/
-            done
-          fi
-          
-          # Ищем vending-app APK
-          if [ -d "vending-app/build/outputs" ]; then
-            echo "Looking for vending-app APKs..."
-            find vending-app/build/outputs -name "*.apk" -type f | while read apk; do
-              echo "Found: $apk"
-              cp "$apk" collected-apks/
-            done
-          fi
-          
-          # Показываем результаты
-          echo ""
-          echo "=== Collected APK files ==="
-          if [ -n "$(ls -A collected-apks)" ]; then
-            ls -la collected-apks/
-            echo "apk_count=$(ls -1 collected-apks/ | wc -l)" >> $GITHUB_OUTPUT
-          else
-            echo "No APK files found!"
-            echo "apk_count=0" >> $GITHUB_OUTPUT
-          fi
+
+      - name: "Execute Gradle lint"
+        run: "./gradlew lint${{ matrix.target }}"
+
+      - name: "Find APK files"
         id: find-apk
-        
+        run: |
+          # Ищем только нужные APK файлы в конкретных модулях
+          find . -path "*/build/outputs/apk/hmsDefault/*.apk" -o -path "*/build/outputs/apk/default/*.apk" | tee apk_files.txt
+          echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
+
       - name: "Upload APK artifacts"
         if: steps.find-apk.outputs.apk_count > 0
         uses: actions/upload-artifact@v4
         with:
-          name: microg-apks-${{ matrix.target }}-${{ github.sha }}
-          path: collected-apks/
-          compression-level: 6
+          name: apk-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            */build/outputs/apk/hmsDefault/*.apk
+            */build/outputs/apk/default/*.apk
+          retention-days: 7
+
+      - name: "Upload build reports"
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            **/build/reports/**/*
+            **/build/outputs/lint-results*.xml
           retention-days: 7
