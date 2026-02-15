@@ -9,8 +9,6 @@ jobs:
   build:
     name: "Gradle build ${{ matrix.target }}"
     runs-on: ubuntu-latest
-    env:
-      GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
 
     strategy:
       matrix:
@@ -37,125 +35,51 @@ jobs:
           
       - name: "Setup Gradle"
         uses: gradle/actions/setup-gradle@v5
-        with:
-          cache-encryption-key: ${{ secrets.GradleEncryptionKey }}
-          build-scan-publish: true
-          build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
-          build-scan-terms-of-use-agree: "yes"
-          
-      - name: "Setup Android SDK"
-        run: |
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-9477386_latest.zip -d $ANDROID_HOME/cmdline-tools
-          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;30.0.3"
-          echo "$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_PATH
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
-          
-      - name: "Setup matchers"
-        run: |
-          matchers_dir='${{ github.workspace }}/.github/matchers'
-          matcher_list()
-          {
-            echo 'gradle-build-matcher.json'
-            echo 'gradle-build-kotlin-error-matcher.json'
-          }
-
-          matcher_list | while IFS='' read -r NAME; do
-            if test -f "${matchers_dir:?}/${NAME:?}"; then
-              echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
-              echo "Matcher configured: ${NAME:?}"
-            fi
-          done
           
       - name: "Execute Gradle assemble"
         run: "./gradlew assemble${{ matrix.target }}"
         
-      - name: "Execute Gradle lint"
-        run: "./gradlew lint${{ matrix.target }}"
-        continue-on-error: true
-        
-      - name: "Check keystore availability"
-        id: check-keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      - name: "Find and prepare APK files"
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "Keystore is available"
-            echo "available=true" >> $GITHUB_OUTPUT
-          else
-            echo "Keystore is NOT available"
-            echo "available=false" >> $GITHUB_OUTPUT
+          mkdir -p collected-apks
+          
+          echo "=== Searching for APK files ==="
+          
+          # Ищем play-services-core APK
+          if [ -d "play-services-core/build/outputs/apk" ]; then
+            echo "Looking for play-services-core APKs..."
+            find play-services-core/build/outputs/apk -name "*.apk" -type f | while read apk; do
+              echo "Found: $apk"
+              cp "$apk" collected-apks/
+            done
           fi
-        
-      - name: "Prepare keystore"
-        if: steps.check-keystore.outputs.available == 'true'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          mkdir -p $HOME/keystores
-          echo "$KEYSTORE_BASE64" | base64 -d > $HOME/keystores/playservices.jks
-          chmod 600 $HOME/keystores/playservices.jks
           
-      - name: "Sign and align APK files"
-        if: steps.check-keystore.outputs.available == 'true'
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          mkdir -p signed-apks
+          # Ищем vending-app APK
+          if [ -d "vending-app/build/outputs" ]; then
+            echo "Looking for vending-app APKs..."
+            find vending-app/build/outputs -name "*.apk" -type f | while read apk; do
+              echo "Found: $apk"
+              cp "$apk" collected-apks/
+            done
+          fi
           
-          find . -path "*/build/outputs/apk/*/release/*.apk" -type f -not -name "*-signed.apk" | while read apk; do
-            filename=$(basename "$apk")
-            basename_no_ext="${filename%.*}"
-            
-            echo "Processing: $filename"
-            
-            if [[ "$filename" == *-unsigned.apk ]]; then
-              signed_name="${basename_no_ext%-unsigned}-signed.apk"
-            else
-              signed_name="${basename_no_ext}-signed.apk"
-            fi
-            
-            jarsigner -verbose \
-              -sigalg SHA1withRSA \
-              -digestalg SHA1 \
-              -keystore $HOME/keystores/playservices.jks \
-              -storepass "$KEYSTORE_PASSWORD" \
-              -keypass "$KEY_PASSWORD" \
-              "$apk" \
-              "$KEY_ALIAS"
-            
-            zipalign -p -v 4 "$apk" "signed-apks/${signed_name}"
-          done
-          
-          ls -la signed-apks/
-          echo "apk_count=$(ls -1 signed-apks/ | wc -l)" >> $GITHUB_OUTPUT
-        id: sign-apks
-        
-      - name: "Copy APK files (without signing)"
-        if: steps.check-keystore.outputs.available == 'false'
-        run: |
-          mkdir -p signed-apks
-          
-          find . -path "*/build/outputs/apk/*/release/*.apk" -type f -not -name "*-unsigned.apk" -not -name "*-unaligned.apk" | while read apk; do
-            filename=$(basename "$apk")
-            echo "Copying: $filename"
-            cp "$apk" "signed-apks/${filename}"
-          done
-          
-          ls -la signed-apks/
-          echo "apk_count=$(ls -1 signed-apks/ | wc -l)" >> $GITHUB_OUTPUT
-        id: copy-apks
+          # Показываем результаты
+          echo ""
+          echo "=== Collected APK files ==="
+          if [ -n "$(ls -A collected-apks)" ]; then
+            ls -la collected-apks/
+            echo "apk_count=$(ls -1 collected-apks/ | wc -l)" >> $GITHUB_OUTPUT
+          else
+            echo "No APK files found!"
+            echo "apk_count=0" >> $GITHUB_OUTPUT
+          fi
+        id: find-apk
         
       - name: "Upload APK artifacts"
+        if: steps.find-apk.outputs.apk_count > 0
         uses: actions/upload-artifact@v4
         with:
           name: microg-apks-${{ matrix.target }}-${{ github.sha }}
-          path: signed-apks/
+          path: collected-apks/
           compression-level: 6
           retention-days: 7
-          if-no-files-found: warn
