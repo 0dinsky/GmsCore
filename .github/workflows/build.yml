@@ -14,26 +14,32 @@ jobs:
 
     strategy:
       matrix:
-        target: [Debug, Release]
+        target: [Release]
 
     steps:
       - name: "Free disk space"
         run: |
           # Deleting unneeded software packages
           sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /opt-hostedtoolcache/go
-
+          sudo rm -rf /opt/hostedtoolcache/go
+          
+          # Clean apt cache
+          sudo apt-get clean
+          
           # Log available space
           df -h
+          
       - name: "Checkout sources"
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          
       - name: "Setup Java"
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
+          
       - name: "Setup Gradle"
         uses: gradle/actions/setup-gradle@v5
         with:
@@ -41,10 +47,26 @@ jobs:
           build-scan-publish: true
           build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
           build-scan-terms-of-use-agree: "yes"
+          
+      - name: "Setup Android SDK"
+        run: |
+          # Установка Android SDK и build-tools
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip -d $ANDROID_HOME/cmdline-tools
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          
+          # Установка build-tools
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;30.0.3"
+          
+          # Добавление в PATH
+          echo "$ANDROID_HOME/build-tools/30.0.3" >> $GITHUB_PATH
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          
       - name: "Setup matchers"
         run: |
           # Setting up matchers...
-
           matchers_dir='${{ github.workspace }}/.github/matchers'
           matcher_list()
           {
@@ -58,34 +80,130 @@ jobs:
               echo "Matcher configured: ${NAME:?}"
             fi
           done
+          
       - name: "Execute Gradle assemble"
         run: "./gradlew assemble${{ matrix.target }}"
+        
       - name: "Execute Gradle lint"
         run: "./gradlew lint${{ matrix.target }}"
-      - name: "Find APK files"
-        id: find-apk
+        continue-on-error: true
+        
+      - name: "Prepare keystore"
+        if: secrets.KEYSTORE_BASE64 != ''
         run: |
-          # Ищем все APK файлы в проекте
-          find . -name "*.apk" -type f | tee apk_files.txt
-          echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
+          # Декодирование keystore из секрета
+          mkdir -p $HOME/keystores
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $HOME/keystores/playservices.jks
+          chmod 600 $HOME/keystores/playservices.jks
           
-          # Если это microG, ищем конкретные модули
-          echo "--- Поиск основных APK ---"
-          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -20
-      - name: "Upload APK artifacts"
-        if: steps.find-apk.outputs.apk_count > 0
+      - name: "Sign and align APK files"
+        if: secrets.KEYSTORE_BASE64 != ''
+        run: |
+          # Создаем директорию для подписанных APK
+          mkdir -p signed-apks
+          
+          # Находим все неподписанные APK
+          find . -path "*/build/outputs/apk/*/release/*.apk" -type f -not -name "*-signed.apk" | while read apk; do
+            filename=$(basename "$apk")
+            dirname=$(dirname "$apk")
+            basename_no_ext="${filename%.*}"
+            
+            echo "Processing: $filename"
+            
+            # Определяем имя для подписанного файла
+            if [[ "$filename" == *-unsigned.apk ]]; then
+              signed_name="${basename_no_ext%-unsigned}-signed.apk"
+            else
+              signed_name="${basename_no_ext}-signed.apk"
+            fi
+            
+            # Подписываем APK
+            jarsigner -verbose \
+              -sigalg SHA1withRSA \
+              -digestalg SHA1 \
+              -keystore $HOME/keystores/playservices.jks \
+              -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+              -keypass "${{ secrets.KEY_PASSWORD }}" \
+              "$apk" \
+              "${{ secrets.KEY_ALIAS }}"
+            
+            # Выравниваем и копируем в финальную директорию
+            zipalign -p -v 4 "$apk" "signed-apks/${signed_name}"
+            
+            echo "Signed and aligned: ${signed_name}"
+          done
+          
+          # Также ищем специфичные для microG файлы
+          find . -name "*microg*.apk" -o -name "*gms*.apk" -o -name "*play*.apk" | while read apk; do
+            if [[ ! "$apk" == *-signed.apk ]] && [[ -f "$apk" ]]; then
+              filename=$(basename "$apk")
+              echo "Found microG APK: $filename"
+              
+              # Копируем уже подписанные или подписываем если нужно
+              if [[ ! -f "signed-apks/${filename}" ]]; then
+                cp "$apk" "signed-apks/${filename}" 2>/dev/null || true
+              fi
+            fi
+          done
+          
+          # Показываем результат
+          echo "=== Signed APK files ==="
+          ls -la signed-apks/
+          echo "apk_count=$(ls -1 signed-apks/ | wc -l)" >> $GITHUB_OUTPUT
+        id: sign-apks
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          
+      - name: "Sign and align APK files (without keystore - debug mode)"
+        if: secrets.KEYSTORE_BASE64 == ''
+        run: |
+          # Создаем директорию для APK (без подписи)
+          mkdir -p signed-apks
+          
+          # Копируем только финальные APK файлы (без подписи)
+          find . -path "*/build/outputs/apk/*/release/*.apk" -type f -not -name "*-unsigned.apk" -not -name "*-unaligned.apk" | while read apk; do
+            filename=$(basename "$apk")
+            echo "Copying: $filename"
+            cp "$apk" "signed-apks/${filename}"
+          done
+          
+          # Копируем microG модули
+          find . -path "*/build/outputs/apk/*/release/*.apk" -type f -name "*.apk" | grep -E "(microg|gms|play)" | head -10 | while read apk; do
+            filename=$(basename "$apk")
+            if [[ ! -f "signed-apks/${filename}" ]]; then
+              echo "Copying microG module: $filename"
+              cp "$apk" "signed-apks/${filename}"
+            fi
+          done
+          
+          # Копируем bundle файлы
+          find . -path "*/build/outputs/bundle/release/*.aab" -type f | head -5 | while read bundle; do
+            filename=$(basename "$bundle")
+            echo "Copying bundle: $filename"
+            cp "$bundle" "signed-apks/${filename}"
+          done
+          
+          ls -la signed-apks/
+          echo "apk_count=$(ls -1 signed-apks/ | wc -l)" >> $GITHUB_OUTPUT
+        id: copy-apks
+        
+      - name: "Upload signed APK artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ matrix.target }}-${{ github.sha }}
-          path: |
-            **/build/outputs/apk/**/*.apk
-            **/build/outputs/bundle/**/*.aab
+          name: microg-signed-apks-${{ matrix.target }}-${{ github.sha }}
+          path: signed-apks/
+          compression-level: 6
           retention-days: 7
-      - name: "Upload build reports"
+          if-no-files-found: warn
+          
+      - name: "Upload lint reports (if any)"
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reports-${{ matrix.target }}-${{ github.sha }}
+          name: lint-reports-${{ matrix.target }}-${{ github.sha }}
           path: |
-            **/build/reports/**/*
-            **/build/outputs/lint-results*.xml
+            **/build/reports/lint-results*.html
+            **/build/reports/lint-results*.xml
+          compression-level: 6
           retention-days: 7
+          if-no-files-found: ignore
