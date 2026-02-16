@@ -17,24 +17,21 @@ jobs:
     steps:
       - name: "Free disk space"
         run: |
-          # Удаление ненужных пакетов
+          # Deleting unneeded software packages
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /opt-hostedtoolcache/go
 
-          # Логирование доступного места
+          # Log available space
           df -h
-
       - name: "Checkout sources"
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - name: "Setup Java"
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
-
       - name: "Setup Gradle"
         uses: gradle/actions/setup-gradle@v5
         with:
@@ -42,9 +39,10 @@ jobs:
           build-scan-publish: true
           build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
           build-scan-terms-of-use-agree: "yes"
-
       - name: "Setup matchers"
         run: |
+          # Setting up matchers...
+
           matchers_dir='${{ github.workspace }}/.github/matchers'
           matcher_list()
           {
@@ -58,30 +56,29 @@ jobs:
               echo "Matcher configured: ${NAME:?}"
             fi
           done
-
       - name: "Execute Gradle assemble"
         run: "./gradlew assemble${{ matrix.target }}"
-
       - name: "Execute Gradle lint"
         run: "./gradlew lint${{ matrix.target }}"
-
       - name: "Find APK files"
         id: find-apk
         run: |
-          # Ищем только нужные APK файлы в конкретных модулях
-          find . -path "*/build/outputs/apk/hmsDefault/*.apk" -o -path "*/build/outputs/apk/default/*.apk" | tee apk_files.txt
+          # Ищем все APK файлы в проекте
+          find . -name "*.apk" -type f | tee apk_files.txt
           echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
-
+          
+          # Если это microG, ищем конкретные модули
+          echo "--- Поиск основных APK ---"
+          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -20
       - name: "Upload APK artifacts"
         if: steps.find-apk.outputs.apk_count > 0
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ matrix.target }}-${{ github.sha }}
           path: |
-            */build/outputs/apk/hmsDefault/*.apk
-            */build/outputs/apk/default/*.apk
+            **/build/outputs/apk/**/*.apk
+            **/build/outputs/bundle/**/*.aab
           retention-days: 7
-
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
         with:
