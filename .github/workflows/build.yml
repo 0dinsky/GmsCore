@@ -40,13 +40,9 @@ jobs:
 
       - name: "Build play-services-core APK"
         run: |
-          ./gradlew :play-services-core:assembleHmsDefault
-
-      - name: "Build vending-app APK"
-        run: |
-          ./gradlew :vending-app:assembleDefault
-
-      - name: "List all files in project"
+          ./gradlew build
+          
+        - name: "List all files in project"
         run: |
           echo "--- Listing all APK files in the project ---"
           find . -name "*.apk" -type f
@@ -54,7 +50,7 @@ jobs:
       - name: "Check if APKs exist"
         id: check_apks
         run: |
-          if [ -f play-services-core/build/outputs/apk/hmsDefault/*.apk ] && [ -f vending-app/build/outputs/apk/default/*.apk ]; then
+          if [ -f play-services-core/build/outputs/apk/hmsDefault/release/*.apk ] && [ -f vending-app/build/outputs/apk/default/release/*.apk ]; then
             echo "APKs found!"
             echo "apk_exists=true" >> $GITHUB_OUTPUT
           else
@@ -68,8 +64,8 @@ jobs:
         with:
           name: microg-apks
           path: |
-            play-services-core/build/outputs/apk/hmsDefault/*.apk
-            vending-app/build/outputs/apk/default/*.apk
+            play-services-core/build/outputs/apk/hmsDefault/release*.apk
+            vending-app/build/outputs/apk/default/release*.apk
 
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
