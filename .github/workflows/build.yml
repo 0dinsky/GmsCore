@@ -1,5 +1,4 @@
-name: "Gradle build (microG)"
-permissions: {}
+pname: "Gradle build (microG)"
 on:
   - push
   - pull_request
@@ -42,30 +41,13 @@ jobs:
         run: |
           ./gradlew build
           
-        - name: "List all files in project"
-        run: |
-          echo "--- Listing all APK files in the project ---"
-          find . -name "*.apk" -type f
-
-      - name: "Check if APKs exist"
-        id: check_apks
-        run: |
-          if [ -f play-services-core/build/outputs/apk/hmsDefault/release/*.apk ] && [ -f vending-app/build/outputs/apk/default/release/*.apk ]; then
-            echo "APKs found!"
-            echo "apk_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "APKs not found!"
-            echo "apk_exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: "Upload APK artifacts"
-        if: steps.check_apks.outputs.apk_exists == 'true'
+        - name: "APK artifacts"
         uses: actions/upload-artifact@v4
         with:
           name: microg-apks
           path: |
-            play-services-core/build/outputs/apk/hmsDefault/release*.apk
-            vending-app/build/outputs/apk/default/release*.apk
+            play-services-core/build/outputs/apk/hmsDefault/*.apk
+            vending-app/build/outputs/apk/default/*.apk
 
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
