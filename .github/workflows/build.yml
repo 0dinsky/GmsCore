@@ -10,11 +10,11 @@ jobs:
     name: "Gradle build ${{ matrix.target }}"
     runs-on: ubuntu-latest
     env:
-      GRADLE_MICROG_VERSION_WITHOUT_GIT: 0
+      GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
 
     strategy:
       matrix:
-        target: [Debug, Release]
+        target: [Release]
 
     steps:
       - name: "Free disk space"
