@@ -1,4 +1,5 @@
-name: "Gradle build (microG)"
+name: "Gradle build"
+permissions: {}
 on:
   - push
   - pull_request
@@ -6,29 +7,33 @@ on:
 
 jobs:
   build:
-    name: "Build microG APKs"
+    name: "Gradle build ${{ matrix.target }}"
     runs-on: ubuntu-latest
     env:
       GRADLE_MICROG_VERSION_WITHOUT_GIT: 1
 
+    strategy:
+      matrix:
+        target: [Release]
+
     steps:
       - name: "Free disk space"
         run: |
+          # Deleting unneeded software packages
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /opt-hostedtoolcache/go
-          df -h
 
+          # Log available space
+          df -h
       - name: "Checkout sources"
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - name: "Setup Java"
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
-
       - name: "Setup Gradle"
         uses: gradle/actions/setup-gradle@v5
         with:
@@ -36,23 +41,51 @@ jobs:
           build-scan-publish: true
           build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
           build-scan-terms-of-use-agree: "yes"
-
-      - name: "Build play-services-core APK"
+      - name: "Setup matchers"
         run: |
-          ./gradlew build
+          # Setting up matchers...
+
+          matchers_dir='${{ github.workspace }}/.github/matchers'
+          matcher_list()
+          {
+            echo 'gradle-build-matcher.json'
+            echo 'gradle-build-kotlin-error-matcher.json'
+          }
+
+          matcher_list | while IFS='' read -r NAME; do
+            if test -f "${matchers_dir:?}/${NAME:?}"; then
+              echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
+              echo "Matcher configured: ${NAME:?}"
+            fi
+          done
+      - name: "Execute Gradle assemble"
+        run: "./gradlew assemble${{ matrix.target }}"
+      - name: "Execute Gradle lint"
+        run: "./gradlew lint${{ matrix.target }}"
+      - name: "Find APK files"
+        id: find-apk
+        run: |
+          # Ищем все APK файлы в проекте
+          find . -name "*.apk" -type f | tee apk_files.txt
+          echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
           
-      - name: "APK artifacts"
+          # Если это microG, ищем конкретные модули
+          echo "--- Поиск основных APK ---"
+          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -20
+      - name: "Upload APK artifacts"
+        if: steps.find-apk.outputs.apk_count > 0
         uses: actions/upload-artifact@v4
         with:
-          name: microg-apks
+          name: apk-${{ matrix.target }}-${{ github.sha }}
           path: |
-            play-services-core/build/outputs/apk/hmsDefault/*.apk
-            vending-app/build/outputs/apk/default/*.apk
-
+            **/build/outputs/a
+            **/build/outputs/apk/**/*.apk
+            **/build/outputs/bundle/**/*.aab
+          retention-days: 7
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
         with:
-          name: build-reports
+          name: reports-${{ matrix.target }}-${{ github.sha }}
           path: |
             **/build/reports/**/*
             **/build/outputs/lint-results*.xml
