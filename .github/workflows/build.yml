@@ -78,8 +78,8 @@ jobs:
         with:
           name: apk-${{ matrix.target }}-${{ github.sha }}
           path: |
-            **/build/outputs/a
-            **/build/outputs/apk/**/*.apk
+            **/build/outputs/apk/hmsDefault/release/*.apk
+            **/build/outputs/apk/default/release/*.apk
             **/build/outputs/bundle/**/*.aab
           retention-days: 7
       - name: "Upload build reports"
