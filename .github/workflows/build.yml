@@ -106,13 +106,13 @@ jobs:
       - name: "Upload gms artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: GmsCore.apk
+          name: signed-gms-apk
           path: outapk/GmsCore.apk
           
       - name: "Upload FakeStore artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: FakeStore.apk
+          name: signed-vending-apk
           path: outapk/FakeStore.apk
           
       - name: "Upload build reports"
