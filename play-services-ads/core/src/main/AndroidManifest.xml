@@ -6,7 +6,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <service 
-          name="org.microg.gms.ads.AdRequestService"=android:name
+          name="org.microg.gms.ads.AdRequestService"
           android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.ads.service.START" />
