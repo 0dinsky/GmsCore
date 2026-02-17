@@ -23,15 +23,18 @@ jobs:
           sudo rm -rf /opt-hostedtoolcache/go
           
           df -h
+          
       - name: "Checkout sources"
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          
       - name: "Setup Java"
         uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
+          
       - name: "Setup Gradle"
         uses: gradle/actions/setup-gradle@v5
         with:
@@ -39,6 +42,7 @@ jobs:
           build-scan-publish: true
           build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
           build-scan-terms-of-use-agree: "yes"
+          
       - name: "Setup matchers"
         run: |
 
@@ -55,20 +59,62 @@ jobs:
               echo "Matcher configured: ${NAME:?}"
             fi
           done
+          
       - name: "Execute Gradle assemble"
         run: "./gradlew assemble${{ matrix.target }}"
+        
       - name: "Execute Gradle lint"
         run: "./gradlew lint${{ matrix.target }}"
+        
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore.jks
+          
+      - name: "Apk sign"
+        run: |
+          jarsigner -verbose \
+            -sigalg SHA1withRSA \
+            -digestalg SHA1 \
+            -keystore keystore.jks \
+            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            play-services-core/build/outputs/apk/hmsDefault/release/*.apk \
+            ${{ secrets.KEY_ALIAS }}
+            
+          jarsigner -verbose \
+            -sigalg SHA1withRSA \
+            -digestalg SHA1 \
+            -keystore keystore.jks \
+            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+            -keypass ${{ secrets.KEY_PASSWORD }} \
+            vending-app/build/outputs/apk/default/release/*.apk \
+            ${{ secrets.KEY_ALIAS }}
+            
+      - name: "ZipAlgin"
+        run:    |
+          ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
+          mkdir outapk
+          
+          $ZIPALIGN -v -p 4 \
+          play-services-core/build/outputs/apk/hmsDefault/release/*.apk \
+          outapk/GmsCore.apk
+
+          $ZIPALIGN -v -p 4 \
+          vending-app/build/outputs/apk/default/release/*.apk \
+          FakeStore.apk
+          
       - name: "Upload gms artifacts"
         uses: actions/upload-artifact@v4
         with:
           name: signed-gms-apk
-          path: play-services-core/build/outputs/apk/hmsDefault/release/*.apk
+          path: outapk/GmsCore.apk
+          
       - name: "Upload FakeStore artifacts"
         uses: actions/upload-artifact@v4
         with:
           name: signed-vending-apk
-          path: vending-app/build/outputs/apk/default/release/*.apk
+          path: outapk/Fakestore.apk
+          
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
         with:
