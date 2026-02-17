@@ -62,11 +62,13 @@ jobs:
       - name: "Upload gms artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: a
-          path: |
-            play-services-core/build/outputs/apk/hmsDefault/release/*.apk
-            vending-app/build/outputs/apk/default/release/*.apk
-            retention-days: 7
+          name: signed-gms-apk
+          path: play-services-core/build/outputs/apk/hmsDefault/release/*.apk
+      - name: "Upload FakeStore artifacts"
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-vending-apk
+          path: vending-app/build/outputs/apk/default/release/*.apk
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
         with:
