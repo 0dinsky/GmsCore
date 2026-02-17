@@ -19,11 +19,9 @@ jobs:
     steps:
       - name: "Free disk space"
         run: |
-          # Deleting unneeded software packages
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /opt-hostedtoolcache/go
-
-          # Log available space
+          
           df -h
       - name: "Checkout sources"
         uses: actions/checkout@v6
@@ -43,7 +41,6 @@ jobs:
           build-scan-terms-of-use-agree: "yes"
       - name: "Setup matchers"
         run: |
-          # Setting up matchers...
 
           matchers_dir='${{ github.workspace }}/.github/matchers'
           matcher_list()
@@ -62,10 +59,10 @@ jobs:
         run: "./gradlew assemble${{ matrix.target }}"
       - name: "Execute Gradle lint"
         run: "./gradlew lint${{ matrix.target }}"
-      - name: "Upload APK artifacts"
+      - name: "Upload gms artifacts"
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ matrix.target }}-${{ github.sha }}
+          name: a
           path: |
             play-services-core/build/outputs/apk/hmsDefault/release/*.apk
             vending-app/build/outputs/apk/default/release/*.apk
