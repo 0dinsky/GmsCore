@@ -62,26 +62,14 @@ jobs:
         run: "./gradlew assemble${{ matrix.target }}"
       - name: "Execute Gradle lint"
         run: "./gradlew lint${{ matrix.target }}"
-      - name: "Find APK files"
-        id: find-apk
-        run: |
-          # Ищем все APK файлы в проекте
-          find . -name "*.apk" -type f | tee apk_files.txt
-          echo "apk_count=$(wc -l < apk_files.txt)" >> $GITHUB_OUTPUT
-          
-          # Если это microG, ищем конкретные модули
-          echo "--- Поиск основных APK ---"
-          find . -path "*/build/outputs/apk/*" -name "*.apk" | head -20
       - name: "Upload APK artifacts"
-        if: steps.find-apk.outputs.apk_count > 0
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ matrix.target }}-${{ github.sha }}
           path: |
-            **/build/outputs/apk/hmsDefault/release/*.apk
-            **/build/outputs/apk/default/release/*.apk
-            **/build/outputs/bundle/**/*.aab
-          retention-days: 7
+            play-services-core/build/outputs/apk/hmsDefault/release/*.apk
+            vending-app/build/outputs/apk/default/release/*.apk
+            retention-days: 7
       - name: "Upload build reports"
         uses: actions/upload-artifact@v4
         with:
