@@ -101,7 +101,7 @@ jobs:
 
           $ZIPALIGN -v -p 4 \
           vending-app/build/outputs/apk/default/release/*.apk \
-          FakeStore.apk
+          outapk/FakeStore.apk
           
       - name: "Upload gms artifacts"
         uses: actions/upload-artifact@v4
