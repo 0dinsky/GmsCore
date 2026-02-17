@@ -11,37 +11,37 @@ buildscript {
     ext.coroutineVersion = '1.7.3'
 
     ext.annotationVersion = '1.7.1'
-    ext.appcompatVersion = '1.7.0'              // ОБНОВЛЕНО для API 36
+    ext.appcompatVersion = '1.7.0'
     ext.biometricVersion = '1.1.0'
-    ext.coreVersion = '1.13.1'                  // ОБНОВЛЕНО
-    ext.fragmentVersion = '1.8.2'                // ОБНОВЛЕНО
-    ext.lifecycleVersion = '2.8.4'               // ОБНОВЛЕНО
+    ext.coreVersion = '1.13.1'
+    
+    ext.fragmentVersion = '1.8.2'
+    ext.lifecycleVersion = '2.8.4'
     ext.loaderVersion = '1.1.0'
-    ext.materialVersion = '1.12.0'               // ОБНОВЛЕНО
-    ext.mediarouterVersion = '1.7.0'             // ОБНОВЛЕНО
+    ext.materialVersion = '1.12.0'
+    ext.mediarouterVersion = '1.7.0'
     ext.multidexVersion = '2.0.1'
-    ext.navigationVersion = '2.7.7'              // МОЖНО до 2.8.0
-    ext.preferenceVersion = '1.2.1'              // ОБНОВЛЕНО
-    ext.recyclerviewVersion = '1.3.2'            // МОЖНО до 1.4.0
-    ext.webkitVersion = '1.12.0'                 // ОБНОВЛЕНО
-    ext.workVersion = '2.9.1'                    // ОБНОВЛЕНО
+    ext.navigationVersion = '2.7.7'
+    ext.preferenceVersion = '1.2.1'
+    ext.recyclerviewVersion = '1.3.2'
+    ext.webkitVersion = '1.12.0'
+    ext.workVersion = '2.9.1'
 
-    ext.slf4jVersion = '1.7.36'                   // МОЖНО до 2.0.13
+    ext.slf4jVersion = '1.7.36'
     ext.volleyVersion = '1.2.1'                   
-    ext.okHttpVersion = '4.12.0'                  // МОЖНО до 4.12.0 (ок)
-    ext.ktorVersion = '2.3.12'                    // МОЖНО до 3.0.0
+    ext.okHttpVersion = '4.12.0'
+    ext.ktorVersion = '2.3.12'
     ext.wireVersion = '4.9.9'                     
     ext.tinkVersion = '1.13.0'                    
 
-    ext.androidBuildGradleVersion = '8.5.0'       // ОБНОВЛЕНО (было 8.2.2)
+    ext.androidBuildGradleVersion = '8.5.0'
 
-    ext.androidBuildVersionTools = '36.0.0'       // ИЗМЕНЕНО на 36
+    ext.androidBuildVersionTools = '36.0.0'
 
     ext.androidMinSdk = 19                         
-    ext.androidTargetSdk = 36                      // ИЗМЕНЕНО на 36
-    ext.androidCompileSdk = 36                     // (уже было 36)
-}
-lProperties = new Properties()
+    ext.androidTargetSdk = 36
+    ext.androidCompileSdk = 36
+    ext.localProperties = new Properties()
 
     try {
         var stream = rootProject.file('local.properties').newDataInputStream()
