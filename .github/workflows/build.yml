@@ -21,7 +21,6 @@ jobs:
         run: |
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo rm -rf /opt-hostedtoolcache/go
-          
           df -h
           
       - name: "Checkout sources"
@@ -45,14 +44,12 @@ jobs:
           
       - name: "Setup matchers"
         run: |
-
           matchers_dir='${{ github.workspace }}/.github/matchers'
           matcher_list()
           {
             echo 'gradle-build-matcher.json'
             echo 'gradle-build-kotlin-error-matcher.json'
           }
-
           matcher_list | while IFS='' read -r NAME; do
             if test -f "${matchers_dir:?}/${NAME:?}"; then
               echo "::add-matcher::${matchers_dir:?}/${NAME:?}"
@@ -70,38 +67,52 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore.jks
           
-      - name: "Apk sign"
+      - name: "ZipAlign"
         run: |
-          jarsigner -verbose \
-            -sigalg SHA1withRSA \
-            -digestalg SHA1 \
-            -keystore keystore.jks \
-            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
-            -keypass ${{ secrets.KEY_PASSWORD }} \
-            play-services-core/build/outputs/apk/hmsDefault/release/*.apk \
-            ${{ secrets.KEY_ALIAS }}
-            
-          jarsigner -verbose \
-            -sigalg SHA1withRSA \
-            -digestalg SHA1 \
-            -keystore keystore.jks \
-            -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
-            -keypass ${{ secrets.KEY_PASSWORD }} \
-            vending-app/build/outputs/apk/default/release/*.apk \
-            ${{ secrets.KEY_ALIAS }}
-            
-      - name: "ZipAlgin"
-        run:    |
           ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
           mkdir outapk
           
           $ZIPALIGN -v -p 4 \
-          play-services-core/build/outputs/apk/hmsDefault/release/*.apk \
-          outapk/GmsCore.apk
+            play-services-core/build/outputs/apk/hmsDefault/release/*.apk \
+            outapk/GmsCore-aligned.apk
 
           $ZIPALIGN -v -p 4 \
-          vending-app/build/outputs/apk/default/release/*.apk \
-          outapk/FakeStore.apk
+            vending-app/build/outputs/apk/default/release/*.apk \
+            outapk/FakeStore-aligned.apk
+          
+      - name: "Sign APK with apksigner"
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          
+          # Sign GmsCore
+          $APKSIGNER sign \
+            --ks keystore.jks \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out outapk/GmsCore.apk \
+            outapk/GmsCore-aligned.apk
+            
+          # Sign FakeStore
+          $APKSIGNER sign \
+            --ks keystore.jks \
+            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out outapk/FakeStore.apk \
+            outapk/FakeStore-aligned.apk
+          
+      - name: "Verify signatures"
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          $APKSIGNER verify --verbose outapk/GmsCore.apk
+          $APKSIGNER verify --verbose outapk/FakeStore.apk
           
       - name: "Upload gms artifacts"
         uses: actions/upload-artifact@v4
