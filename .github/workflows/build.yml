@@ -115,19 +115,19 @@ jobs:
           $APKSIGNER verify --verbose outapk/FakeStore.apk
           
       - name: "Upload gms artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signed-gms-apk
           path: outapk/GmsCore.apk
           
       - name: "Upload FakeStore artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signed-vending-apk
           path: outapk/FakeStore.apk
           
       - name: "Upload build reports"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-${{ matrix.target }}-${{ github.sha }}
           path: |
